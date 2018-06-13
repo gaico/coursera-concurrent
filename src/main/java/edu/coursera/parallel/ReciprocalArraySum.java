@@ -1,5 +1,9 @@
 package edu.coursera.parallel;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.RecursiveAction;
 
 /**
@@ -102,6 +106,8 @@ public final class ReciprocalArraySum {
          */
         private double value;
 
+        private int threshhold;
+
         /**
          * Constructor.
          * @param setStartIndexInclusive Set the starting index to begin
@@ -110,7 +116,90 @@ public final class ReciprocalArraySum {
          * @param setInput Input values
          */
         ReciprocalArraySumTask(final int setStartIndexInclusive,
-                final int setEndIndexExclusive, final double[] setInput) {
+                final int setEndIndexExclusive, final double[] setInput, final int threshhold) {
+            this.startIndexInclusive = setStartIndexInclusive;
+            this.endIndexExclusive = setEndIndexExclusive;
+            this.input = setInput;
+            this.threshhold = threshhold;
+        }
+
+        /**
+         * Getter for the value produced by this task.
+         * @return Value produced by this task
+         */
+        public double getValue() {
+            return value;
+        }
+
+        @Override
+        protected void compute() {
+             //int threshhold = 500001;
+
+            //threshhold = 125001;
+
+            //if(this.input.length > PAR_THRESHHOLD){
+            if(endIndexExclusive - startIndexInclusive > threshhold){
+                //do work in parallel
+
+                System.out.println("Splitting, threshhold: " + threshhold);
+
+                int startLeft = startIndexInclusive;
+                int endLeft = ((endIndexExclusive-startIndexInclusive)/2)+startIndexInclusive;
+
+                int startRight = ((endIndexExclusive-startIndexInclusive)/2)+startIndexInclusive+1;
+                int endRight = endIndexExclusive;
+
+                System.out.println(String.format("sLeft %s, eLeft %s, sRight %s, eRight %s", startLeft, endLeft, startRight, endRight));
+
+
+                ReciprocalArraySumTask left = new ReciprocalArraySumTask(startLeft, endLeft, input, threshhold);
+                ReciprocalArraySumTask right = new ReciprocalArraySumTask(startRight, endRight, input, threshhold);
+                left.fork();
+                right.compute();
+                left.join();
+                value = left.getValue() + right.getValue();
+            }else {
+                //do work sequential
+                System.out.println("Working");
+                for (int i = startIndexInclusive; i <= endIndexExclusive; i++) {
+                    value += 1 / input[i];
+                }
+            }
+        }
+    }
+
+    /**
+     * This class stub can be filled in to implement the body of each task
+     * created to perform reciprocal array sum in parallel.
+     */
+    private static class ReciprocalArraySumChunkedTask extends RecursiveAction {
+
+        /**
+         * Starting index for traversal done by this task.
+         */
+        private final int startIndexInclusive;
+        /**
+         * Ending index for traversal done by this task.
+         */
+        private final int endIndexExclusive;
+        /**
+         * Input array to reciprocal sum.
+         */
+        private final double[] input;
+        /**
+         * Intermediate value produced by this task.
+         */
+        private double value;
+
+        /**
+         * Constructor.
+         * @param setStartIndexInclusive Set the starting index to begin
+         *        parallel traversal at.
+         * @param setEndIndexExclusive Set ending index for parallel traversal.
+         * @param setInput Input values
+         */
+        ReciprocalArraySumChunkedTask(final int setStartIndexInclusive,
+                               final int setEndIndexExclusive, final double[] setInput) {
             this.startIndexInclusive = setStartIndexInclusive;
             this.endIndexExclusive = setEndIndexExclusive;
             this.input = setInput;
@@ -126,28 +215,13 @@ public final class ReciprocalArraySum {
 
         @Override
         protected void compute() {
-            final int threshhold = 500001;
-            //if(this.input.length > PAR_THRESHHOLD){
-            if(endIndexExclusive - startIndexInclusive > threshhold){
-                //do work in parallel
+            System.out.println(String.format("startIndexInclusive %s, endIndexExclusive %s", startIndexInclusive, endIndexExclusive));
 
-                int startLeft = startIndexInclusive;
-                int endLeft = ((endIndexExclusive-startIndexInclusive)/2)+startIndexInclusive;
-
-                int startRight = ((endIndexExclusive-startIndexInclusive)/2)+startIndexInclusive+1;
-                int endRight = endIndexExclusive;
-
-                ReciprocalArraySumTask left = new ReciprocalArraySumTask(startLeft, endLeft, input);
-                ReciprocalArraySumTask right = new ReciprocalArraySumTask(startRight, endRight, input);
-                left.fork();
-                right.compute();
-                left.join();
-                value = left.getValue() + right.getValue();
-            }else {
-                //do work sequential
+            //do work sequential
+                System.out.println("Working");
                 for (int i = startIndexInclusive; i <= endIndexExclusive; i++) {
                     value += 1 / input[i];
-                }
+
             }
         }
     }
@@ -164,18 +238,11 @@ public final class ReciprocalArraySum {
     protected static double parArraySum(final double[] input) {
         assert input.length % 2 == 0;
 
-        double sum = 0;
+        int threshhold = (input.length/2)+1;
 
-        // Compute sum of reciprocals of array elements
-//        for (int i = 0; i < input.length; i++) {
-//            sum += 1 / input[i];
-//        }
-
-        ReciprocalArraySumTask task = new ReciprocalArraySumTask(0, input.length-1, input);
+        ReciprocalArraySumTask task = new ReciprocalArraySumTask(0, input.length-1, input, threshhold);
         task.compute();
-        sum = task.getValue();
-
-        return sum;
+        return task.getValue();
     }
 
     /**
@@ -188,15 +255,54 @@ public final class ReciprocalArraySum {
      * @param numTasks The number of tasks to create
      * @return The sum of the reciprocals of the array input
      */
-    protected static double parManyTaskArraySum(final double[] input,
-            final int numTasks) {
-        double sum = 0;
+    protected static double parManyTaskArraySum(final double[] input,  int numTasks) {
+//        int threshhold = input.length/numTasks+1;
+//
+        System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "8");
+//
+        System.out.println("___________________________________________________________________________");
+//        System.out.println("Num tasks: " + numTasks + " num proc: " + Runtime.getRuntime().availableProcessors() + "threshhold: " + threshhold);
+//
+//        ReciprocalArraySumTask task = new ReciprocalArraySumTask(0, input.length-1, input, threshhold);
+//        task.compute();
+//        return task.getValue();
 
-        // Compute sum of reciprocals of array elements
-        for (int i = 0; i < input.length; i++) {
-            sum += 1 / input[i];
+        //numTasks = 2;
+
+
+        ForkJoinPool forkJoinPool = new ForkJoinPool(numTasks);
+        forkJoinPool.
+
+        List<ReciprocalArraySumChunkedTask> tasks = new ArrayList<>();
+        int numOfItemsPerTask = input.length/numTasks;
+        int startItem = 0;
+        int endItem = numOfItemsPerTask -1;
+
+        ReciprocalArraySumChunkedTask firstTask = new ReciprocalArraySumChunkedTask(startItem, endItem, input);
+        //firstTask.fork();
+        tasks.add(firstTask);
+        for(int i=1; i<numTasks; i++){
+            startItem = startItem + numOfItemsPerTask;
+            endItem = endItem + numOfItemsPerTask;
+            ReciprocalArraySumChunkedTask task = new ReciprocalArraySumChunkedTask(startItem, endItem, input);
+            tasks.add(task);
+            //task.compute();
         }
+        ForkJoinTask.invokeAll(tasks);
 
-        return sum;
+
+
+        //firstTask.join();
+        //double value = firstTask.getValue();
+        double value = 0;
+
+        for(ReciprocalArraySumChunkedTask task: tasks){
+            value = value + task.getValue();
+        }
+        return value;
+
     }
+
+
+
 }
